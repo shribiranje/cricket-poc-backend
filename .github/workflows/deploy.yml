@@ -21,10 +21,6 @@ jobs:
         run: |
           docker build -t cricket-backend:poc .
 
-      - name: Verify Docker image
-        run: |
-          docker images cricket-backend
-
       - name: Save Docker image
         run: |
           docker save cricket-backend:poc | gzip > backend-image.tar.gz
@@ -59,36 +55,18 @@ jobs:
 
             echo "Docker image loaded successfully."
 
-            echo "Finding Docker Compose file..."
+            COMPOSE_FILE="/home/ec2-user/cricket-poc/dist_20260715/deploy/docker-compose.yml"
 
-            COMPOSE_FILE=$(find /home/ec2-user/cricket-poc \
-              -type f \
-              -path "*/deploy/docker-compose.yml" \
-              | head -n 1)
-
-            if [ -z "$COMPOSE_FILE" ]; then
-              echo "ERROR: docker-compose.yml not found!"
-              find /home/ec2-user/cricket-poc -name docker-compose.yml -type f
-              exit 1
-            fi
-
-            echo "Compose file found:"
+            echo "Using Compose file:"
             echo "$COMPOSE_FILE"
 
-            DEPLOY_DIR=$(dirname "$COMPOSE_FILE")
-
-            echo "Deployment directory:"
-            echo "$DEPLOY_DIR"
-
-            echo "Checking deployment files..."
-            ls -la "$DEPLOY_DIR"
+            test -f "$COMPOSE_FILE"
 
             echo "Checking current containers..."
-            docker compose \
-              -f "$COMPOSE_FILE" \
-              ps
 
-            echo "Deploying backend container..."
+            docker compose -f "$COMPOSE_FILE" ps
+
+            echo "Deploying backend..."
 
             docker compose \
               -f "$COMPOSE_FILE" \
@@ -99,17 +77,15 @@ jobs:
 
             echo "Backend deployment completed."
 
-            echo "Removing temporary image file..."
-
             rm -f /home/ec2-user/backend-image.tar.gz
 
-            echo "Checking backend container..."
+            echo "Backend container status:"
 
             docker compose \
               -f "$COMPOSE_FILE" \
               ps backend
 
-            echo "All containers..."
+            echo "All containers:"
 
             docker ps
 
