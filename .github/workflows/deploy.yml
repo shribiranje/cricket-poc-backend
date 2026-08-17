@@ -5,22 +5,53 @@ on:
     branches:
       - main
 
+  workflow_dispatch:
+
 jobs:
   deploy:
+    name: Build and Deploy Backend
     runs-on: ubuntu-latest
 
     steps:
+
+      # ----------------------------------------
+      # 1. Checkout source code
+      # ----------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: |
-          docker build -t cricket-backend:poc .
 
+      # ----------------------------------------
+      # 2. Build Docker image
+      # ----------------------------------------
+      - name: Build Backend Docker image
+        run: |
+          docker build \
+            -t cricket-backend:poc \
+            .
+
+
+      # ----------------------------------------
+      # 3. Verify Docker image
+      # ----------------------------------------
+      - name: Verify Docker image
+        run: |
+          docker images cricket-backend
+
+
+      # ----------------------------------------
+      # 4. Save Docker image
+      # ----------------------------------------
       - name: Save Docker image
         run: |
           docker save cricket-backend:poc | gzip > backend-image.tar.gz
 
+          ls -lh backend-image.tar.gz
+
+
+      # ----------------------------------------
+      # 5. Copy Docker image to EC2
+      # ----------------------------------------
       - name: Copy Docker image to EC2
         uses: appleboy/scp-action@v1.0.0
         with:
@@ -30,27 +61,56 @@ jobs:
           source: "backend-image.tar.gz"
           target: "/home/ec2-user/"
 
+
+      # ----------------------------------------
+      # 6. Deploy Backend on EC2
+      # ----------------------------------------
       - name: Deploy Backend on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+
           script: |
             set -e
 
+            echo "======================================"
+            echo "Starting Backend Deployment"
+            echo "======================================"
+
             echo "Loading new backend Docker image..."
+
             gunzip -c /home/ec2-user/backend-image.tar.gz | docker load
+
+            echo "Docker image loaded successfully."
+
+            echo "Changing to deployment directory..."
 
             cd /home/ec2-user/cricket-poc/dist_20260715/deploy
 
-            echo "Deploying backend container..."
-            docker compose up -d --no-deps backend
+            echo "Checking current containers..."
 
-            echo "Removing temporary image..."
+            docker compose ps
+
+            echo "Deploying new backend container..."
+
+            docker compose up -d --no-deps --force-recreate backend
+
+            echo "Backend container deployed."
+
+            echo "Removing temporary image file..."
+
             rm -f /home/ec2-user/backend-image.tar.gz
 
-            echo "Checking containers..."
+            echo "Checking backend container..."
+
+            docker compose ps backend
+
+            echo "Checking all containers..."
+
             docker ps
 
-            echo "Backend deployment completed successfully!"
+            echo "======================================"
+            echo "Backend Deployment Completed"
+            echo "======================================"
