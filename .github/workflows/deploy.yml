@@ -14,44 +14,22 @@ jobs:
 
     steps:
 
-      # ----------------------------------------
-      # 1. Checkout source code
-      # ----------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
-
-      # ----------------------------------------
-      # 2. Build Docker image
-      # ----------------------------------------
       - name: Build Backend Docker image
         run: |
-          docker build \
-            -t cricket-backend:poc \
-            .
+          docker build -t cricket-backend:poc .
 
-
-      # ----------------------------------------
-      # 3. Verify Docker image
-      # ----------------------------------------
       - name: Verify Docker image
         run: |
           docker images cricket-backend
 
-
-      # ----------------------------------------
-      # 4. Save Docker image
-      # ----------------------------------------
       - name: Save Docker image
         run: |
           docker save cricket-backend:poc | gzip > backend-image.tar.gz
-
           ls -lh backend-image.tar.gz
 
-
-      # ----------------------------------------
-      # 5. Copy Docker image to EC2
-      # ----------------------------------------
       - name: Copy Docker image to EC2
         uses: appleboy/scp-action@v1.0.0
         with:
@@ -61,10 +39,6 @@ jobs:
           source: "backend-image.tar.gz"
           target: "/home/ec2-user/"
 
-
-      # ----------------------------------------
-      # 6. Deploy Backend on EC2
-      # ----------------------------------------
       - name: Deploy Backend on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -85,19 +59,45 @@ jobs:
 
             echo "Docker image loaded successfully."
 
-            echo "Changing to deployment directory..."
+            echo "Finding Docker Compose file..."
 
-            cd /home/ec2-user/cricket-poc/dist_20260715/deploy
+            COMPOSE_FILE=$(find /home/ec2-user/cricket-poc \
+              -type f \
+              -path "*/deploy/docker-compose.yml" \
+              | head -n 1)
+
+            if [ -z "$COMPOSE_FILE" ]; then
+              echo "ERROR: docker-compose.yml not found!"
+              find /home/ec2-user/cricket-poc -name docker-compose.yml -type f
+              exit 1
+            fi
+
+            echo "Compose file found:"
+            echo "$COMPOSE_FILE"
+
+            DEPLOY_DIR=$(dirname "$COMPOSE_FILE")
+
+            echo "Deployment directory:"
+            echo "$DEPLOY_DIR"
+
+            echo "Checking deployment files..."
+            ls -la "$DEPLOY_DIR"
 
             echo "Checking current containers..."
+            docker compose \
+              -f "$COMPOSE_FILE" \
+              ps
 
-            docker compose ps
+            echo "Deploying backend container..."
 
-            echo "Deploying new backend container..."
+            docker compose \
+              -f "$COMPOSE_FILE" \
+              up -d \
+              --no-deps \
+              --force-recreate \
+              backend
 
-            docker compose up -d --no-deps --force-recreate backend
-
-            echo "Backend container deployed."
+            echo "Backend deployment completed."
 
             echo "Removing temporary image file..."
 
@@ -105,12 +105,14 @@ jobs:
 
             echo "Checking backend container..."
 
-            docker compose ps backend
+            docker compose \
+              -f "$COMPOSE_FILE" \
+              ps backend
 
-            echo "Checking all containers..."
+            echo "All containers..."
 
             docker ps
 
             echo "======================================"
-            echo "Backend Deployment Completed"
+            echo "Backend Deployment SUCCESS"
             echo "======================================"
