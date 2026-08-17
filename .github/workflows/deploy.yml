@@ -1,0 +1,55 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t cricket-backend:poc .
+
+      - name: Save Docker image
+        run: |
+          docker save cricket-backend:poc | gzip > backend-image.tar.gz
+
+      - name: Copy image to EC2
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_CICD }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "backend-image.tar.gz"
+          target: "/home/ec2-user/"
+
+      - name: Deploy Backend on EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_CICD }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            echo "Loading backend Docker image..."
+            gunzip -c /home/ec2-user/backend-image.tar.gz | docker load
+
+            cd /home/ec2-user/cricket-poc/dist_20260715/deploy
+
+            echo "Recreating backend container..."
+            docker compose up -d --no-deps backend
+
+            echo "Removing temporary image file..."
+            rm -f /home/ec2-user/backend-image.tar.gz
+
+            echo "Backend deployment completed."
+
+            docker ps
